@@ -238,7 +238,12 @@ class ClientHello(HelloMessage):
         .. deprecated:: 0.5
             use extensions field to get the extension for inspection
         """
-        pass
+        if self.extensions is None:
+            return None
+        for ext in self.extensions:
+            if isinstance(ext, ClientCertTypeExtension):
+                return ext.cert_types
+        return None
 
     @certificate_types.setter
     def certificate_types(self, val):
@@ -253,7 +258,16 @@ class ClientHello(HelloMessage):
         :param val: list of supported certificate types by client encoded as
             single byte integers
         """
-        pass
+        if self.extensions is None:
+            self.extensions = []
+
+        for ext in self.extensions:
+            if isinstance(ext, ClientCertTypeExtension):
+                ext.cert_types = val
+                return
+
+        ext = ClientCertTypeExtension().create(val)
+        self.extensions.append(ext)
 
     @property
     def srp_username(self):
@@ -263,7 +277,12 @@ class ClientHello(HelloMessage):
         .. deprecated:: 0.5
             use extensions field to get the extension for inspection
         """
-        pass
+        if self.extensions is None:
+            return None
+        for ext in self.extensions:
+            if isinstance(ext, SRPExtension):
+                return ext.srp_username
+        return None
 
     @srp_username.setter
     def srp_username(self, name):
@@ -273,7 +292,16 @@ class ClientHello(HelloMessage):
         :type name: bytearray
         :param name: UTF-8 encoded username
         """
-        pass
+        if self.extensions is None:
+            self.extensions = []
+
+        for ext in self.extensions:
+            if isinstance(ext, SRPExtension):
+                ext.srp_username = name
+                return
+
+        ext = SRPExtension().create(name)
+        self.extensions.append(ext)
 
     @property
     def tack(self):
@@ -285,7 +313,12 @@ class ClientHello(HelloMessage):
 
         :rtype: boolean
         """
-        pass
+        if self.extensions is None:
+            return False
+        for ext in self.extensions:
+            if isinstance(ext, TACKExtension):
+                return True
+        return False
 
     @tack.setter
     def tack(self, present):
@@ -296,7 +329,18 @@ class ClientHello(HelloMessage):
         :param present: True will create extension while False will remove
             extension from client hello
         """
-        pass
+        if self.extensions is None:
+            self.extensions = []
+
+        for ext in self.extensions:
+            if isinstance(ext, TACKExtension):
+                if not present:
+                    self.extensions.remove(ext)
+                return
+
+        if present:
+            ext = TACKExtension().create()
+            self.extensions.append(ext)
 
     @property
     def supports_npn(self):
@@ -308,7 +352,12 @@ class ClientHello(HelloMessage):
 
         :rtype: boolean
         """
-        pass
+        if self.extensions is None:
+            return False
+        for ext in self.extensions:
+            if isinstance(ext, NPNExtension):
+                return True
+        return False
 
     @supports_npn.setter
     def supports_npn(self, present):
@@ -319,7 +368,18 @@ class ClientHello(HelloMessage):
         :param present: selects whatever to create or remove the extension
             from list of supported ones
         """
-        pass
+        if self.extensions is None:
+            self.extensions = []
+
+        for ext in self.extensions:
+            if isinstance(ext, NPNExtension):
+                if not present:
+                    self.extensions.remove(ext)
+                return
+
+        if present:
+            ext = NPNExtension().create([])
+            self.extensions.append(ext)
 
     @property
     def server_name(self):
@@ -331,7 +391,13 @@ class ClientHello(HelloMessage):
 
         :rtype: bytearray
         """
-        pass
+        if self.extensions is None:
+            return None
+        for ext in self.extensions:
+            if isinstance(ext, SNIExtension):
+                if ext.host_names:
+                    return ext.host_names[0]
+        return None
 
     @server_name.setter
     def server_name(self, hostname):
@@ -341,7 +407,16 @@ class ClientHello(HelloMessage):
         :type hostname: bytearray
         :param hostname: name of the host_name to set
         """
-        pass
+        if self.extensions is None:
+            self.extensions = []
+
+        for ext in self.extensions:
+            if isinstance(ext, SNIExtension):
+                ext.host_names = [hostname]
+                return
+
+        ext = SNIExtension().create([hostname])
+        self.extensions.append(ext)
 
     def create(self, version, random, session_id, cipher_suites, certificate_types=None, srpUsername=None, tack=False, supports_npn=None, serverName=None, extensions=None):
         """
@@ -386,19 +461,90 @@ class ClientHello(HelloMessage):
         :type extensions: list of :py:class:`~.extensions.TLSExtension`
         :param extensions: list of extensions to advertise
         """
-        pass
+        self.client_version = version
+        self.random = random
+        self.session_id = session_id
+        self.cipher_suites = cipher_suites
+        self.compression_methods = [0]  # only null compression
+        self.extensions = extensions
+
+        if certificate_types is not None:
+            self.certificate_types = certificate_types
+        if srpUsername is not None:
+            self.srp_username = srpUsername
+        if tack:
+            self.tack = tack
+        if supports_npn is not None:
+            self.supports_npn = supports_npn
+        if serverName is not None:
+            self.server_name = serverName
 
     def parse(self, p):
         """Deserialise object from on the wire data."""
-        pass
+        if self.ssl2:
+            self.client_version = (p.get(1), p.get(1))
+            cipher_suites_length = p.get(2)
+            session_id_length = p.get(2)
+            challenge_length = p.get(2)
+            self.cipher_suites = []
+            for i in range(cipher_suites_length // 3):
+                self.cipher_suites.append(p.get(3))
+            self.session_id = p.getFixBytes(session_id_length)
+            self.random = p.getFixBytes(challenge_length)
+            self.compression_methods = [0]  # SSL2 has no compression
+            return None
+
+        self.client_version = (p.get(1), p.get(1))
+        self.random = p.getFixBytes(32)
+        session_id_length = p.get(1)
+        self.session_id = p.getFixBytes(session_id_length)
+        cipher_suites_length = p.get(2)
+        self.cipher_suites = []
+        for i in range(cipher_suites_length // 2):
+            self.cipher_suites.append(p.get(2))
+        compression_methods_length = p.get(1)
+        self.compression_methods = []
+        for i in range(compression_methods_length):
+            self.compression_methods.append(p.get(1))
+
+        if p.getRemainingLength() > 0:
+            self.extensions = []
+            extensions_length = p.get(2)
+            while p.getRemainingLength() > 0:
+                ext = TLSExtension().parse(p)
+                self.extensions.append(ext)
 
     def _writeSSL2(self):
         """Serialise SSLv2 object to on the wire data."""
-        pass
+        w = Writer()
+        w.add(self.client_version[0], 1)
+        w.add(self.client_version[1], 1)
+        w.add(len(self.cipher_suites) * 3, 2)
+        w.add(len(self.session_id), 2)
+        w.add(len(self.random), 2)
+        for cipher_suite in self.cipher_suites:
+            w.addFixSeq(bytearray([0x00, cipher_suite >> 8, cipher_suite & 0xFF]), 3)
+        w.addFixSeq(self.session_id, len(self.session_id))
+        w.addFixSeq(self.random, len(self.random))
+        return w.bytes
 
     def _write(self):
         """Serialise SSLv3 or TLS object to on the wire data."""
-        pass
+        w = Writer()
+        w.add(self.client_version[0], 1)
+        w.add(self.client_version[1], 1)
+        w.addFixSeq(self.random, 32)
+        w.addVarSeq(self.session_id, 1, 1)
+        w.addVarSeq(Writer.array_to_bytes(self.cipher_suites, 2), 2, 2)
+        w.addVarSeq(Writer.array_to_bytes(self.compression_methods, 1), 1, 1)
+
+        if self.extensions is not None:
+            w2 = Writer()
+            for ext in self.extensions:
+                w2.bytes += ext.write()
+            w.add(len(w2.bytes), 2)
+            w.bytes += w2.bytes
+        return w.bytes
 
     def psk_truncate(self):
         """Return a truncated encoding of message without binders.
@@ -411,11 +557,30 @@ class ClientHello(HelloMessage):
 
         :rtype: bytearray
         """
-        pass
+        if not self.extensions:
+            return self.write()
+
+        psk_ext = None
+        for ext in self.extensions:
+            if isinstance(ext, PreSharedKeyExtension):
+                psk_ext = ext
+                break
+
+        if not psk_ext:
+            return self.write()
+
+        # remove the binders from the extension
+        old_binders = psk_ext.binders
+        psk_ext.binders = None
+        ret = self.write()
+        psk_ext.binders = old_binders
+        return ret
 
     def write(self):
         """Serialise object to on the wire data."""
-        pass
+        if self.ssl2:
+            return self._writeSSL2()
+        return self._write()
 
 class HelloRequest(HandshakeMsg):
     """
