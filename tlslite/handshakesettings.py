@@ -316,11 +316,37 @@ class HandshakeSettings(object):
 
     def _init_key_settings(self):
         """Create default variables for key-related settings."""
-        pass
+        self.minKeySize = 1023
+        self.maxKeySize = 8193
+        self.rsaSigHashes = list(RSA_SIGNATURE_HASHES)
+        self.dsaSigHashes = list(DSA_SIGNATURE_HASHES)
+        self.ecdsaSigHashes = list(ECDSA_SIGNATURE_HASHES)
+        self.more_sig_schemes = list(SIGNATURE_SCHEMES)
+        self.rsa_schemes = list(RSA_SCHEMES)
+        self.eccCurves = list(CURVE_NAMES)
+        self.dhGroups = list(ALL_DH_GROUP_NAMES)
+        self.defaultCurve = "secp256r1"
+        self.keyShares = ["secp256r1", "x25519"]
+        self.certificateTypes = list(CERTIFICATE_TYPES)
 
     def _init_misc_extensions(self):
         """Default variables for assorted extensions."""
-        pass
+        self.useExtendedMasterSecret = True
+        self.requireExtendedMasterSecret = False
+        self.useEncryptThenMAC = True
+        self.useExperimentalTackExtension = False
+        self.sendFallbackSCSV = False
+        self.use_heartbeat_extension = True
+        self.heartbeat_response_callback = None
+        self.record_size_limit = None
+        self.padding_cb = None
+        self.pskConfigs = []
+        self.psk_modes = list(PSK_MODES)
+        self.max_early_data = 0
+        self.ticketKeys = []
+        self.ticketCipher = "aes256gcm"
+        self.ticketLifetime = 24 * 60 * 60  # 1 day
+        self.ticket_count = 1
 
     def __init__(self):
         """Initialise default values for settings."""
@@ -337,86 +363,327 @@ class HandshakeSettings(object):
     @staticmethod
     def _sanityCheckKeySizes(other):
         """Check if key size limits are sane"""
-        pass
+        if other.minKeySize < 512:
+            raise ValueError("minKeySize too small")
+        if other.minKeySize > 16384:
+            raise ValueError("minKeySize too large")
+        if other.maxKeySize < 512:
+            raise ValueError("maxKeySize too small")
+        if other.maxKeySize > 16384:
+            raise ValueError("maxKeySize too large")
+        if other.maxKeySize < other.minKeySize:
+            raise ValueError("maxKeySize smaller than minKeySize")
 
     @staticmethod
     def _not_matching(values, sieve):
         """Return list of items from values that are not in sieve."""
-        pass
+        return [val for val in values if val not in sieve]
 
     @staticmethod
     def _sanityCheckCipherSettings(other):
         """Check if specified cipher settings are known."""
-        pass
+        not_matching = HandshakeSettings._not_matching(other.cipherNames,
+                                                     ALL_CIPHER_NAMES)
+        if not_matching:
+            raise ValueError("Unknown cipher name: {0}".format(not_matching))
+
+        not_matching = HandshakeSettings._not_matching(other.macNames,
+                                                     ALL_MAC_NAMES)
+        if not_matching:
+            raise ValueError("Unknown MAC name: {0}".format(not_matching))
+
+        not_matching = HandshakeSettings._not_matching(
+            other.cipherImplementations, CIPHER_IMPLEMENTATIONS)
+        if not_matching:
+            raise ValueError("Unknown cipher implementation: {0}"
+                           .format(not_matching))
 
     @staticmethod
     def _sanityCheckECDHSettings(other):
         """Check ECDHE settings if they are sane."""
-        pass
+        not_matching = HandshakeSettings._not_matching(other.eccCurves,
+                                                     ALL_CURVE_NAMES)
+        if not_matching:
+            raise ValueError("Unknown ECC curve name: {0}".format(not_matching))
+
+        if other.defaultCurve not in ALL_CURVE_NAMES:
+            raise ValueError("Unknown default ECC curve name: {0}"
+                           .format(other.defaultCurve))
 
     @staticmethod
     def _sanityCheckDHSettings(other):
         """Check if (EC)DHE settings are sane."""
-        pass
+        not_matching = HandshakeSettings._not_matching(other.dhGroups,
+                                                     ALL_DH_GROUP_NAMES)
+        if not_matching:
+            raise ValueError("Unknown DH group name: {0}".format(not_matching))
 
     @staticmethod
     def _sanityCheckPrimitivesNames(other):
         """Check if specified cryptographic primitive names are known"""
-        pass
+        not_matching = HandshakeSettings._not_matching(other.rsaSigHashes,
+                                                     ALL_RSA_SIGNATURE_HASHES)
+        if not_matching:
+            raise ValueError("Unknown RSA signature hash: {0}"
+                           .format(not_matching))
+
+        not_matching = HandshakeSettings._not_matching(other.dsaSigHashes,
+                                                     DSA_SIGNATURE_HASHES)
+        if not_matching:
+            raise ValueError("Unknown DSA signature hash: {0}"
+                           .format(not_matching))
+
+        not_matching = HandshakeSettings._not_matching(other.ecdsaSigHashes,
+                                                     ECDSA_SIGNATURE_HASHES)
+        if not_matching:
+            raise ValueError("Unknown ECDSA signature hash: {0}"
+                           .format(not_matching))
+
+        not_matching = HandshakeSettings._not_matching(other.more_sig_schemes,
+                                                     SIGNATURE_SCHEMES)
+        if not_matching:
+            raise ValueError("Unknown signature scheme: {0}"
+                           .format(not_matching))
+
+        not_matching = HandshakeSettings._not_matching(other.rsa_schemes,
+                                                     RSA_SCHEMES)
+        if not_matching:
+            raise ValueError("Unknown RSA scheme: {0}"
+                           .format(not_matching))
 
     @staticmethod
     def _sanityCheckProtocolVersions(other):
         """Check if set protocol version are sane"""
-        pass
+        if other.minVersion > other.maxVersion:
+            raise ValueError("Versions set incorrectly")
+        if other.minVersion not in KNOWN_VERSIONS:
+            raise ValueError("Unknown minimum protocol version")
+        if other.maxVersion not in KNOWN_VERSIONS:
+            raise ValueError("Unknown maximum protocol version")
 
     @staticmethod
     def _sanityCheckEMSExtension(other):
         """Check if settings for EMS are sane."""
-        pass
+        if other.requireExtendedMasterSecret and \
+                not other.useExtendedMasterSecret:
+            raise ValueError("Require Extended Master Secret but don't use it")
 
     @staticmethod
     def _sanityCheckExtensions(other):
         """Check if set extension settings are sane"""
-        pass
+        if other.record_size_limit is not None:
+            if not 64 <= other.record_size_limit <= 2**14+1:
+                raise ValueError("Record size limit must be between 64 and 16385")
 
     @staticmethod
     def _not_allowed_len(values, sieve):
         """Return True if length of any item in values is not in sieve."""
-        pass
+        return any(len(i) not in sieve for i in values)
 
     @staticmethod
     def _sanityCheckPsks(other):
         """Check if the set PSKs are sane."""
-        pass
+        if other.psk_modes:
+            not_matching = HandshakeSettings._not_matching(other.psk_modes,
+                                                         PSK_MODES)
+            if not_matching:
+                raise ValueError("Unknown PSK mode: {0}".format(not_matching))
+
+        if not all(isinstance(i, (bytes, bytearray)) for i in other.pskConfigs):
+            raise ValueError("PSK identity must be a bytes-like object")
 
     @staticmethod
     def _sanityCheckTicketSettings(other):
         """Check if the session ticket settings are sane."""
-        pass
+        if other.ticketCipher not in TICKET_CIPHERS:
+            raise ValueError("Unknown ticket cipher")
+
+        if other.ticketLifetime < 0:
+            raise ValueError("Ticket lifetime must be a positive integer")
+
+        if other.ticket_count < 0:
+            raise ValueError("Ticket count must be a positive integer")
 
     def _copy_cipher_settings(self, other):
         """Copy values related to cipher selection."""
-        pass
+        other.cipherNames = self.cipherNames
+        other.macNames = self.macNames
+        other.keyExchangeNames = self.keyExchangeNames
+        other.cipherImplementations = self.cipherImplementations
+        other.minVersion = self.minVersion
+        other.maxVersion = self.maxVersion
+        other.versions = self.versions
 
     def _copy_extension_settings(self, other):
         """Copy values of settings related to extensions."""
-        pass
+        other.useExtendedMasterSecret = self.useExtendedMasterSecret
+        other.requireExtendedMasterSecret = self.requireExtendedMasterSecret
+        other.useEncryptThenMAC = self.useEncryptThenMAC
+        other.useExperimentalTackExtension = self.useExperimentalTackExtension
+        other.sendFallbackSCSV = self.sendFallbackSCSV
+        other.use_heartbeat_extension = self.use_heartbeat_extension
+        other.heartbeat_response_callback = self.heartbeat_response_callback
+        other.record_size_limit = self.record_size_limit
+        other.padding_cb = self.padding_cb
+        other.pskConfigs = self.pskConfigs
+        other.psk_modes = self.psk_modes
+        other.max_early_data = self.max_early_data
+        other.ticketKeys = self.ticketKeys
+        other.ticketCipher = self.ticketCipher
+        other.ticketLifetime = self.ticketLifetime
+        other.ticket_count = self.ticket_count
 
     @staticmethod
     def _remove_all_matches(values, needle):
         """Remove all instances of needle from values."""
-        pass
+        while needle in values:
+            values.remove(needle)
+
+    def getCertificateTypes(self):
+        """Get list of certificate types as IDs."""
+        ret = []
+        if "x509" in self.certificateTypes:
+            ret.append(CertificateType.x509)
+        return ret
+
+    def validate(self):
+        """
+        Validate the settings, filter out unsupported ciphersuites and return
+        a copy of object.
+
+        This method checks if the settings are consistent and if they can be
+        used for a connection. It checks if all selected algorithms are
+        supported.
+
+        :rtype: HandshakeSettings
+        :returns: a copy of self with all settings validated
+        :raises ValueError: when settings are invalid, inconsistent or unsupported
+        """
+        other = HandshakeSettings()
+
+        # Copy values
+        other.minKeySize = self.minKeySize
+        other.maxKeySize = self.maxKeySize
+        other.cipherNames = self.cipherNames
+        other.macNames = self.macNames
+        other.keyExchangeNames = self.keyExchangeNames
+        other.cipherImplementations = self.cipherImplementations
+        other.rsaSigHashes = self.rsaSigHashes
+        other.dsaSigHashes = self.dsaSigHashes
+        other.ecdsaSigHashes = self.ecdsaSigHashes
+        other.more_sig_schemes = self.more_sig_schemes
+        other.rsa_schemes = self.rsa_schemes
+        other.eccCurves = self.eccCurves
+        other.dhGroups = self.dhGroups
+        other.defaultCurve = self.defaultCurve
+        other.keyShares = self.keyShares
+        other.certificateTypes = self.certificateTypes
+        other.minVersion = self.minVersion
+        other.maxVersion = self.maxVersion
+        other.versions = self.versions
+        other.useExtendedMasterSecret = self.useExtendedMasterSecret
+        other.requireExtendedMasterSecret = self.requireExtendedMasterSecret
+        other.useEncryptThenMAC = self.useEncryptThenMAC
+        other.useExperimentalTackExtension = self.useExperimentalTackExtension
+        other.sendFallbackSCSV = self.sendFallbackSCSV
+        other.use_heartbeat_extension = self.use_heartbeat_extension
+        other.heartbeat_response_callback = self.heartbeat_response_callback
+        other.record_size_limit = self.record_size_limit
+        other.padding_cb = self.padding_cb
+        other.pskConfigs = self.pskConfigs
+        other.psk_modes = self.psk_modes
+        other.max_early_data = self.max_early_data
+        other.ticketKeys = self.ticketKeys
+        other.ticketCipher = self.ticketCipher
+        other.ticketLifetime = self.ticketLifetime
+        other.ticket_count = self.ticket_count
+
+        # Perform sanity checks
+        self._sanityCheckKeySizes(other)
+        self._sanityCheckCipherSettings(other)
+        self._sanityCheckECDHSettings(other)
+        self._sanityCheckDHSettings(other)
+        self._sanityCheckPrimitivesNames(other)
+        self._sanityCheckProtocolVersions(other)
+        self._sanityCheckEMSExtension(other)
+        self._sanityCheckExtensions(other)
+        self._sanityCheckPsks(other)
+        self._sanityCheckTicketSettings(other)
+
+        return other
 
     def _sanity_check_ciphers(self, other):
         """Remove unsupported ciphers in current configuration."""
-        pass
+        if not other.cipherNames:
+            raise ValueError("No cipher names specified")
 
+        if not other.macNames:
+            raise ValueError("No MAC names specified")
+
+        if not other.keyExchangeNames:
+            raise ValueError("No key exchange algorithms specified")
+
+        if not other.cipherImplementations:
+            raise ValueError("No cipher implementations specified")
+
+        # Remove ciphers that are not supported
+        for cipher in other.cipherNames[:]:
+            if cipher not in ALL_CIPHER_NAMES:
+                other.cipherNames.remove(cipher)
+
+        # Remove MACs that are not supported
+        for mac in other.macNames[:]:
+            if mac not in ALL_MAC_NAMES:
+                other.macNames.remove(mac)
+
+        # Remove key exchange algorithms that are not supported
+        for kex in other.keyExchangeNames[:]:
+            if kex not in KEY_EXCHANGE_NAMES:
+                other.keyExchangeNames.remove(kex)
+
+        # Remove cipher implementations that are not supported
+        for impl in other.cipherImplementations[:]:
+            if impl not in CIPHER_IMPLEMENTATIONS:
+                other.cipherImplementations.remove(impl)
+
+        # Check if any ciphers remain
+        if not other.cipherNames:
+            raise ValueError("No supported cipher names")
+
+        # Check if any MACs remain
+        if not other.macNames:
+            raise ValueError("No supported MAC names")
+
+        # Check if any key exchange algorithms remain
+        if not other.keyExchangeNames:
+            raise ValueError("No supported key exchange algorithms")
+
+        # Check if any cipher implementations remain
+        if not other.cipherImplementations:
+            raise ValueError("No supported cipher implementations")
     def _sanity_check_implementations(self, other):
         """Remove all backends that are not loaded."""
-        pass
+        if not cryptomath.m2cryptoLoaded:
+            self._remove_all_matches(other.cipherImplementations, "openssl")
+        if not cryptomath.pycryptoLoaded:
+            self._remove_all_matches(other.cipherImplementations, "pycrypto")
 
+        if not other.cipherImplementations:
+            raise ValueError("No supported cipher implementations")
     def _copy_key_settings(self, other):
         """Copy key-related settings."""
+        other.minKeySize = self.minKeySize
+        other.maxKeySize = self.maxKeySize
+        other.rsaSigHashes = self.rsaSigHashes
+        other.dsaSigHashes = self.dsaSigHashes
+        other.ecdsaSigHashes = self.ecdsaSigHashes
+        other.more_sig_schemes = self.more_sig_schemes
+        other.rsa_schemes = self.rsa_schemes
+        other.eccCurves = self.eccCurves
+        other.dhGroups = self.dhGroups
+        other.defaultCurve = self.defaultCurve
+        other.keyShares = self.keyShares
+        other.certificateTypes = self.certificateTypes
         pass
 
     def validate(self):

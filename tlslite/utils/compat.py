@@ -9,6 +9,22 @@ import traceback
 import time
 import ecdsa
 from binascii import a2b_hex, b2a_hex, a2b_base64, b2a_base64
+
+def compat26Str(x):
+    """Convert bytes or str to str"""
+    if isinstance(x, str):
+        return x
+    elif isinstance(x, bytes):
+        return x.decode('ascii')
+    else:
+        return str(x)
+
+def compatLong(x):
+    """Convert number to long"""
+    if sys.version_info >= (3, 0):
+        return int(x)
+    else:
+        return long(x)
 if sys.version_info >= (3, 0):
     if sys.version_info < (3, 4):
 
