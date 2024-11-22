@@ -56,19 +56,23 @@ prngName = 'os.urandom'
 
 def MD5(b):
     """Return a MD5 digest of data"""
-    pass
+    return hashlib.md5(compat26Str(b)).digest()
 
 def SHA1(b):
     """Return a SHA1 digest of data"""
-    pass
+    return hashlib.sha1(compat26Str(b)).digest()
 
 def secureHash(data, algorithm):
     """Return a digest of `data` using `algorithm`"""
-    pass
+    hashInstance = hashlib.new(algorithm)
+    hashInstance.update(compat26Str(data))
+    return hashInstance.digest()
 
 def secureHMAC(k, b, algorithm):
     """Return a HMAC using `b` and `k` using `algorithm`"""
-    pass
+    k = compatHMAC(k)
+    b = compatHMAC(b)
+    return hmac.new(k, b, getattr(hashlib, algorithm)).digest()
 
 def HKDF_expand_label(secret, label, hashValue, length, algorithm):
     """
@@ -83,7 +87,11 @@ def HKDF_expand_label(secret, label, hashValue, length, algorithm):
         basis of the HKDF
     :rtype: bytearray
     """
-    pass
+    hkdf_label = Writer()
+    hkdf_label.add(length, 2)
+    hkdf_label.addVarSeq(b"tls13 " + label, 1, 1)
+    hkdf_label.addVarSeq(hashValue, 1, 1)
+    return HKDF_expand(secret, hkdf_label.bytes(), length, algorithm)
 
 def derive_secret(secret, label, handshake_hashes, algorithm):
     """
@@ -99,7 +107,13 @@ def derive_secret(secret, label, handshake_hashes, algorithm):
         be generated
     :rtype: bytearray
     """
-    pass
+    if handshake_hashes is None:
+        hash_value = secureHash(b"", algorithm)
+    else:
+        hash_value = handshake_hashes.digest(algorithm)
+    return HKDF_expand_label(secret, label, hash_value,
+                           getattr(hashlib, algorithm).digest_size,
+                           algorithm)
 
 def bytesToNumber(b, endian='big'):
     """
@@ -107,7 +121,7 @@ def bytesToNumber(b, endian='big'):
 
     By default assumes big-endian encoding of the number.
     """
-    pass
+    return bytes_to_int(b, endian)
 
 def numberToByteArray(n, howManyBytes=None, endian='big'):
     """
@@ -117,30 +131,90 @@ def numberToByteArray(n, howManyBytes=None, endian='big'):
     not be larger.  The returned bytearray will contain a big- or little-endian
     encoding of the input integer (n). Big endian encoding is used by default.
     """
-    pass
+    return bytearray(int_to_bytes(n, howManyBytes, endian))
 
 def mpiToNumber(mpi):
     """Convert a MPI (OpenSSL bignum string) to an integer."""
-    pass
+    byte_array = bytearray(mpi)
+    byte_len = (byte_array[0] * 256 + byte_array[1] + 7) // 8
+    return bytesToNumber(byte_array[2:2 + byte_len])
 numBits = bit_length
 numBytes = byte_length
 if GMPY2_LOADED:
 
     def invMod(a, b):
         """Return inverse of a mod b, zero if none."""
-        pass
+        try:
+            return int(powmod(mpz(a), -1, mpz(b)))
+        except (ValueError, ZeroDivisionError):
+            return 0
 else:
 
     def invMod(a, b):
         """Return inverse of a mod b, zero if none."""
-        pass
+        s = 0
+        t = 1
+        r = b
+        old_s = 1
+        old_t = 0
+        old_r = a
+        while r != 0:
+            quotient = old_r // r
+            old_r, r = r, old_r - quotient * r
+            old_s, s = s, old_s - quotient * s
+            old_t, t = t, old_t - quotient * t
+        if old_r != 1:
+            return 0
+        while old_s < 0:
+            old_s += b
+        return old_s
 if gmpyLoaded or GMPY2_LOADED:
+    powMod = powmod
 else:
     powMod = pow
 
 def divceil(divident, divisor):
     """Integer division with rounding up"""
-    pass
+    return (divident + divisor - 1) // divisor
+
+def isPrime(n, iterations=8):
+    """Returns True if n is prime with high probability"""
+    if n < 2:
+        return False
+    if n == 2:
+        return True
+    if n & 1 == 0:
+        return False
+
+    # Write n-1 as d * 2^s by factoring powers of 2 from n-1
+    s = 0
+    d = n - 1
+    while d & 1 == 0:
+        s += 1
+        d >>= 1
+
+    # Try to divide n by a few small primes
+    for i in [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97]:
+        if n % i == 0:
+            return n == i
+
+    # Do iterations of Miller-Rabin testing
+    for i in range(iterations):
+        a = bytes_to_int(os.urandom(numBytes(n)))
+        if a == 0 or a >= n:
+            a = 1
+        a = powMod(a, d, n)
+        if a == 1:
+            continue
+        for r in range(s):
+            if a == n - 1:
+                break
+            a = powMod(a, 2, n)
+            if a == 1:
+                return False
+        else:
+            return False
+    return True
 
 def getRandomPrime(bits, display=False):
     """
@@ -149,7 +223,14 @@ def getRandomPrime(bits, display=False):
     the number will be 'bits' bits long (i.e. generated number will be
     larger than `(2^(bits-1) * 3 ) / 2` but smaller than 2^bits.
     """
-    pass
+    while True:
+        n = bytes_to_int(os.urandom(bits // 8 + 1))
+        n |= 2 ** (bits - 1)  # Set high bit
+        n &= ~(1 << (bits - 1)) - 1  # Clear low bits
+        if display:
+            print(".", end=' ')
+        if isPrime(n, iterations=30):
+            return n
 
 def getRandomSafePrime(bits, display=False):
     """Generate a random safe prime.
@@ -157,4 +238,8 @@ def getRandomSafePrime(bits, display=False):
     Will generate a prime `bits` bits long (see getRandomPrime) such that
     the (p-1)/2 will also be prime.
     """
-    pass
+    while True:
+        q = getRandomPrime(bits - 1, display)
+        p = 2 * q + 1
+        if isPrime(p, iterations=30):
+            return p
