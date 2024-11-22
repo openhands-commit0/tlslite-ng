@@ -118,6 +118,7 @@ def deprecated_attrs(names, warn="Attribute '{old_name}' is deprecated, please u
 
     def decorator(cls):
         return DeprecatedAttrMetaclass(cls.__name__, cls.__bases__, dict(cls.__dict__))
+    return decorator
 
 def deprecated_method(message):
     """Decorator for deprecating methods.

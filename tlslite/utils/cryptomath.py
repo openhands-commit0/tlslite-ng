@@ -190,6 +190,22 @@ def mpiToNumber(mpi):
     byte_array = bytearray(mpi)
     byte_len = (byte_array[0] * 256 + byte_array[1] + 7) // 8
     return bytesToNumber(byte_array[2:2 + byte_len])
+
+def numberToMPI(n):
+    """Convert an integer to a MPI (OpenSSL bignum string)."""
+    b = numberToByteArray(n)
+    ext = 0
+    if len(b) == 0:
+        b = bytearray([0])
+    if b[0] & 0x80:
+        ext = 1
+    length = len(b) + ext
+    b2 = bytearray(2 + length)
+    b2[0] = (length >> 8) & 0xFF
+    b2[1] = length & 0xFF
+    for i in range(len(b)):
+        b2[2+ext+i] = b[i]
+    return bytes(b2)
 numBits = bit_length
 numBytes = byte_length
 if GMPY2_LOADED:
