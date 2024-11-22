@@ -62,6 +62,22 @@ def SHA1(b):
     """Return a SHA1 digest of data"""
     return hashlib.sha1(compat26Str(b)).digest()
 
+def HMAC_MD5(k, b):
+    """Return HMAC using MD5"""
+    return secureHMAC(k, b, "md5")
+
+def HMAC_SHA1(k, b):
+    """Return HMAC using SHA1"""
+    return secureHMAC(k, b, "sha1")
+
+def HMAC_SHA256(k, b):
+    """Return HMAC using SHA256"""
+    return secureHMAC(k, b, "sha256")
+
+def HMAC_SHA384(k, b):
+    """Return HMAC using SHA384"""
+    return secureHMAC(k, b, "sha384")
+
 def secureHash(data, algorithm):
     """Return a digest of `data` using `algorithm`"""
     hashInstance = hashlib.new(algorithm)
@@ -73,6 +89,22 @@ def secureHMAC(k, b, algorithm):
     k = compatHMAC(k)
     b = compatHMAC(b)
     return hmac.new(k, b, getattr(hashlib, algorithm)).digest()
+
+def getRandomBytes(howMany):
+    """Return a specified number of random bytes."""
+    return os.urandom(howMany)
+
+def getRandomNumber(low, high):
+    """Return a random number in the range [low, high]."""
+    if low >= high:
+        raise ValueError("Low must be lower than high")
+    howManyBits = len(bin(high - low)[2:])
+    howManyBytes = (howManyBits + 7) // 8
+    while True:
+        bytes = getRandomBytes(howManyBytes)
+        n = bytesToNumber(bytes)
+        if n >= low and n <= high:
+            return n
 
 def HKDF_expand_label(secret, label, hashValue, length, algorithm):
     """

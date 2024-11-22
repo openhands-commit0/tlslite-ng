@@ -6,9 +6,9 @@ import sys
 # which is not available in Python 2- asyncio is used
 # in the implementation of TLSAsyncioDispatcherMixIn
 try:
+    import asyncio
     from tlslite.integration.tlsasynciodispatchermixin \
         import TLSAsyncioDispatcherMixIn
-    import asyncio
 except ImportError:
     pass
 
