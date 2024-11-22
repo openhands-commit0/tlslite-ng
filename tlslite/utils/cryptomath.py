@@ -106,6 +106,26 @@ def getRandomNumber(low, high):
         if n >= low and n <= high:
             return n
 
+def HKDF_expand(secret, info, length, algorithm):
+    """
+    HKDF-Expand function from RFC 5869.
+
+    :param bytearray secret: the key from which to derive the keying material
+    :param bytearray info: context specific information
+    :param int length: number of bytes to produce
+    :param str algorithm: name of the secure hash algorithm used as the
+        basis of the HKDF
+    :rtype: bytearray
+    """
+    hash_size = getattr(hashlib, algorithm)().digest_size
+    N = (length + hash_size - 1) // hash_size
+    T = bytearray()
+    output = bytearray()
+    for i in range(N):
+        T = secureHMAC(secret, T + info + bytearray([i + 1]), algorithm)
+        output += T
+    return output[:length]
+
 def HKDF_expand_label(secret, label, hashValue, length, algorithm):
     """
     TLS1.3 key derivation function (HKDF-Expand-Label).
