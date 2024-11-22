@@ -16,7 +16,23 @@ def dePem(s, name):
     The first such PEM block in the input will be found, and its
     payload will be base64 decoded and returned.
     """
-    pass
+    start = "-----BEGIN " + name + "-----"
+    end = "-----END " + name + "-----"
+    s = str(s)
+
+    # Find first PEM block
+    start_index = s.find(start)
+    if start_index == -1:
+        raise SyntaxError("Missing PEM prefix")
+    end_index = s.find(end, start_index + len(start))
+    if end_index == -1:
+        raise SyntaxError("Missing PEM postfix")
+
+    # Get payload
+    s = s[start_index + len(start):end_index]
+    s = ''.join(s.splitlines())
+    s = s.strip()
+    return bytearray(binascii.a2b_base64(s))
 
 def dePemList(s, name):
     """Decode a sequence of PEM blocks into a list of bytearrays.
@@ -42,7 +58,24 @@ def dePemList(s, name):
     All such PEM blocks will be found, decoded, and return in an ordered list
     of bytearrays, which may have zero elements if not PEM blocks are found.
     """
-    pass
+    bList = []
+    start = "-----BEGIN " + name + "-----"
+    end = "-----END " + name + "-----"
+    s = str(s)
+    while True:
+        start_index = s.find(start)
+        if start_index == -1:
+            break
+        end_index = s.find(end, start_index + len(start))
+        if end_index == -1:
+            break
+        # Get the payload
+        payload = s[start_index + len(start):end_index]
+        payload = ''.join(payload.splitlines())
+        payload = payload.strip()
+        bList.append(bytearray(binascii.a2b_base64(payload)))
+        s = s[end_index + len(end):]
+    return bList
 
 def pem(b, name):
     """Encode a payload bytearray into a PEM string.
@@ -56,4 +89,33 @@ def pem(b, name):
         KoZIhvcNAQEFBQADAwA5kw==
         -----END CERTIFICATE-----
     """
-    pass
+    s = binascii.b2a_base64(b).decode()
+    s = s.rstrip()  # remove newline from b2a_base64
+    s = "-----BEGIN " + name + "-----\n" + \
+        s + "\n" + \
+        "-----END " + name + "-----\n"
+    return s
+
+def pemSniff(s, name):
+    """Check if string appears to be a PEM-encoded payload with the specified name.
+
+    :type s: str
+    :param s: The string to check.
+
+    :type name: str
+    :param name: The expected name of the PEM payload.
+
+    :rtype: bool
+    :returns: True if the string appears to be a PEM-encoded payload with the
+        specified name, False otherwise.
+    """
+    start = "-----BEGIN " + name + "-----"
+    end = "-----END " + name + "-----"
+    s = str(s)
+    start_index = s.find(start)
+    if start_index == -1:
+        return False
+    end_index = s.find(end, start_index + len(start))
+    if end_index == -1:
+        return False
+    return True
