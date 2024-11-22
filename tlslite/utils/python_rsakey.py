@@ -55,11 +55,11 @@ class Python_RSAKey(RSAKey):
         Does the key has the associated private key (True) or is it only
         the public part (False).
         """
-        pass
+        return self.d != 0
 
     def acceptsPassword(self):
         """Does it support encrypted key files."""
-        pass
+        return False
 
     @staticmethod
     def generate(bits, key_type='rsa'):
@@ -67,10 +67,62 @@ class Python_RSAKey(RSAKey):
 
         key_type can be "rsa" for a universal rsaEncryption key or
         "rsa-pss" for a key that can be used only for RSASSA-PSS."""
-        pass
+        key = Python_RSAKey(key_type=key_type)
+        p = getRandomPrime(bits // 2, False)
+        q = getRandomPrime(bits // 2, False)
+        n = p * q
+        t = lcm(p - 1, q - 1)
+        e = 65537
+        d = invMod(e, t)
+        key.n = n
+        key.e = e
+        key.d = d
+        key.p = p
+        key.q = q
+        key.dP = d % (p - 1)
+        key.dQ = d % (q - 1)
+        key.qInv = invMod(q, p)
+        return key
+
+    @staticmethod
+    def parse(s):
+        """Parse a string containing a PEM-encoded key."""
+        return Python_RSAKey.parsePEM(s)
 
     @staticmethod
     @deprecated_params({'data': 's', 'password_callback': 'passwordCallback'})
     def parsePEM(data, password_callback=None):
         """Parse a string containing a PEM-encoded <privateKey>."""
-        pass
+        if password_callback:
+            raise ValueError("This implementation does not support encrypted keys")
+
+        # Try to parse as private key first
+        try:
+            der = dePem(data, "RSA PRIVATE KEY")
+            key = Python_RSAKey()
+            p = Parser(der)
+            p.get(1)  # skip version
+            key.n = p.getInt(1)
+            key.e = p.getInt(1)
+            key.d = p.getInt(1)
+            key.p = p.getInt(1)
+            key.q = p.getInt(1)
+            key.dP = p.getInt(1)
+            key.dQ = p.getInt(1)
+            key.qInv = p.getInt(1)
+            return key
+        except SyntaxError:
+            pass
+
+        # Try to parse as public key
+        try:
+            der = dePem(data, "RSA PUBLIC KEY")
+            key = Python_RSAKey()
+            p = Parser(der)
+            key.n = p.getInt(1)
+            key.e = p.getInt(1)
+            return key
+        except SyntaxError:
+            pass
+
+        raise SyntaxError("Not a valid PEM file")
