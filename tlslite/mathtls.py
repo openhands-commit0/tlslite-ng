@@ -1,10 +1,43 @@
 """Miscellaneous helper functions."""
+import struct
 from .utils.compat import *
 from .utils.cryptomath import *
 from .constants import CipherSuite
 from .utils import tlshashlib as hashlib
 from .utils import tlshmac as hmac
 from .utils.deprecations import deprecated_method
+
+def createMAC_SSL(mac_key, seq_num, content_type, data, version):
+    """Create a SSL/early TLS MAC."""
+    mac = hmac.HMAC(mac_key, digestmod=hashlib.md5)
+    mac.update(bytearray(struct.pack(">Q", seq_num)))
+    mac.update(bytearray([content_type]))
+    mac.update(bytearray(struct.pack(">H", len(data))))
+    mac.update(data)
+    return mac.digest()
+
+def createHMAC(mac_key, seq_num, content_type, data, version, algorithm):
+    """Create a TLS 1.2 HMAC."""
+    mac = hmac.HMAC(mac_key, digestmod=getattr(hashlib, algorithm))
+    mac.update(bytearray(struct.pack(">Q", seq_num)))
+    mac.update(bytearray([content_type]))
+    mac.update(bytearray(struct.pack(">H", version[0])))
+    mac.update(bytearray(struct.pack(">H", version[1])))
+    mac.update(bytearray(struct.pack(">H", len(data))))
+    mac.update(data)
+    return mac.digest()
+
+def makeX(salt, username, password):
+    """Create an X value for SRP."""
+    return bytesToNumber(secureHash(salt + username + password, "sha1"))
+
+def makeU(N, A, B):
+    """Create a U value for SRP."""
+    return bytesToNumber(secureHash(numberToByteArray(A) + numberToByteArray(B), "sha1"))
+
+def makeK(N, g):
+    """Create a K value for SRP."""
+    return bytesToNumber(secureHash(numberToByteArray(N) + numberToByteArray(g), "sha1"))
 FFDHE_PARAMETERS = {}
 '\nListing of all well known FFDH parameters.\n\nPlease note that this dictionary includes all groups that are well-known\n(i.e. named), irrespective if their use is recommended or not.\n\nYou should use RFC7919_GROUPS for well-known secure groups.\n'
 RFC2409_GROUP1 = (2, int(remove_whitespace('\n         FFFFFFFF FFFFFFFF C90FDAA2 2168C234 C4C6628B 80DC1CD1\n         29024E08 8A67CC74 020BBEA6 3B139B22 514A0879 8E3404DD\n         EF9519B3 CD3A431B 302B0A6D F25F1437 4FE1356D 6D51C245\n         E485B576 625E7EC6 F44C42E9 A63A3620 FFFFFFFF FFFFFFFF'), 16))
